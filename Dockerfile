@@ -1,69 +1,53 @@
 FROM ubuntu:22.04
 
+# Set environment to noninteractive
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
 
+# Set timezone
+RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
+    echo "Etc/UTC" > /etc/timezone
+
+# Install system packages and GUI tools
 RUN apt update && apt upgrade -y && \
-    apt install -y --no-install-recommends \
-      sudo \
-      xrdp \
-      xfce4 \
-      xfce4-goodies \
-      firefox \
-      wget \
-      curl \
-      gnupg2 \
-      software-properties-common \
-      dbus-x11 \
-      xterm \
-      policykit-1 \
-      pulseaudio \
-      alsa-utils \
-      pavucontrol \
-      net-tools \
-      unzip \
-      nano \
-      openssh-server \
-      docker.io \
-      git \
-      ca-certificates \
-      python3 \
-      python3-pip \
-      fuse3 \
-      gvfs-backends \
-      gvfs-fuse \
-      build-essential \
-      cmake && \
-    apt clean && rm -rf /var/lib/apt/lists/*
+    apt install -y sudo xrdp xfce4 xfce4-goodies \
+    firefox wget curl gnupg2 software-properties-common \
+    dbus-x11 xterm policykit-1 \
+    pulseaudio alsa-utils pavucontrol \
+    net-tools unzip nano openssh-server \
+    docker.io git ca-certificates python3 python3-pip fuse \
+    gvfs-backends gvfs-fuse build-essential cmake \
+    ttyd && \
+    apt clean
 
-# Install Google Chrome
-RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt update && apt install -y google-chrome-stable && apt clean && rm -rf /var/lib/apt/lists/*
+# Enable SSH
+RUN mkdir /var/run/sshd
 
-# Download and install prebuilt ttyd binary
-RUN TTYD_VERSION=1.7.4 && \
-    curl -Lo /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 && \
-    chmod +x /usr/local/bin/ttyd
+# Allow root login and set password
+RUN echo 'root:root' | chpasswd && \
+    sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# Configure XFCE for XRDP
+# Configure XRDP to use XFCE and allow root login
 RUN echo "startxfce4" > /root/.xsession && \
-    sed -i 's/allowed_users=console/allowed_users=anybody/' /etc/X11/Xwrapper.config && \
-    sed -i '/fi/a startxfce4' /etc/xrdp/startwm.sh
+    if [ -f /etc/X11/Xwrapper.config ]; then \
+        sed -i 's/allowed_users=console/allowed_users=anybody/' /etc/X11/Xwrapper.config; \
+    fi && \
+    if [ -f /etc/xrdp/startwm.sh ]; then \
+        sed -i '/fi/a startxfce4' /etc/xrdp/startwm.sh; \
+    fi
 
-# PulseAudio config for forwarding
-RUN echo "default-server = unix:/run/pulse/native" >> /etc/pulse/client.conf && \
-    echo "autospawn = no" >> /etc/pulse/client.conf && \
-    echo "daemon-binary = /bin/true" >> /etc/pulse/client.conf
+# Configure PulseAudio for root
+RUN echo "unix-user:root;" > /etc/pulse/client.conf
 
-# Enable GUI apps as root
-RUN echo -e '[Configuration]\nAdminIdentities=unix-user:root' > /etc/polkit-1/localauthority.conf.d/02-allow-root.conf
+# Fix policykit to allow GUI elevation as root
+RUN echo '[Configuration]\nAdminIdentities=unix-user:root' > /etc/polkit-1/localauthority.conf.d/02-allow-root.conf
 
-# Expose ports: 3389 (RDP), 22 (SSH), 7681 (ttyd)
+# Expose services
 EXPOSE 3389 22 7681
 
-# Copy start script
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
-
-CMD ["/start.sh"]
+# Start all services including SSH, XRDP, and ttyd (web terminal)
+CMD service dbus start && \
+    service pulseaudio start || true && \
+    service ssh start && \
+    service xrdp start && \
+    ttyd -p 7681 bash
