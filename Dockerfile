@@ -3,10 +3,6 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# Set root password
-RUN echo "root:root" | chpasswd
-
-# Update and install all necessary packages
 RUN apt update && apt upgrade -y && \
     apt install -y --no-install-recommends \
       sudo \
@@ -45,10 +41,10 @@ RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
     apt update && apt install -y google-chrome-stable && apt clean && rm -rf /var/lib/apt/lists/*
 
-# Install ttyd (Web Terminal)
-RUN git clone https://github.com/tsl0922/ttyd.git /opt/ttyd && \
-    cd /opt/ttyd && mkdir build && cd build && cmake .. && make && make install && \
-    rm -rf /opt/ttyd
+# Download and install prebuilt ttyd binary
+RUN TTYD_VERSION=1.7.4 && \
+    curl -Lo /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 && \
+    chmod +x /usr/local/bin/ttyd
 
 # Configure XFCE for XRDP
 RUN echo "startxfce4" > /root/.xsession && \
@@ -66,7 +62,7 @@ RUN echo -e '[Configuration]\nAdminIdentities=unix-user:root' > /etc/polkit-1/lo
 # Expose ports: 3389 (RDP), 22 (SSH), 7681 (ttyd)
 EXPOSE 3389 22 7681
 
-# Startup script (create this next)
+# Copy start script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
