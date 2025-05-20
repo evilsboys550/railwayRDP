@@ -1,26 +1,28 @@
 #!/bin/bash
 
-echo "[*] Starting PulseAudio..."
-mkdir -p /run/pulse
-pulseaudio --start
-
-echo "[*] Starting SSH..."
-service ssh start
-
-echo "[*] Starting Docker daemon..."
-dockerd &
-
-echo "[*] Starting D-Bus..."
+# Start D-Bus (needed by many GUI apps)
 service dbus start
 
-echo "[*] Starting XRDP..."
-service xrdp restart
+# Start PulseAudio daemon
+pulseaudio --start --exit-idle-time=-1
 
-echo "[*] Starting Web Terminal (ttyd)..."
-/usr/local/bin/ttyd -p 7681 -u root -c root:root bash &
+# Start Docker daemon in background
+dockerd &
 
-echo "✅ RDP ready on port 3389"
-echo "✅ Web Terminal ready on http://localhost:7681 (user: root / pass: root)"
-echo "✅ SSH ready on port 22 (user: root / pass: root)"
+# Wait for Docker to be ready (optional, for safety)
+while(! docker info > /dev/null 2>&1); do
+    echo "Waiting for Docker daemon..."
+    sleep 1
+done
 
-tail -f /var/log/xrdp-sesman.log
+# Start XRDP service
+service xrdp start
+
+# Start SSH daemon
+service ssh start
+
+# Start ttyd web terminal on port 7681, root shell, no authentication (secure on private networks)
+ttyd -p 7681 bash &
+
+# Keep container running
+tail -f /dev/null
